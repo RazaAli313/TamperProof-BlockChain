@@ -2,43 +2,51 @@ import { useState } from 'react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
 import { FiUpload, FiCheckCircle, FiXCircle, FiHash } from 'react-icons/fi';
-import QRScanner from '../components/QRScannerCard';
+import QRScannerCard from '../components/QRScannerCard';
 
 export default function Verify() {
   const [verificationResult, setVerificationResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [hashInput, setHashInput] = useState('');
   const [activeTab, setActiveTab] = useState('qr');
 
-  const verifyDocument = async (endpoint, data) => {
+  const verifyDocument = async (method, data) => {
     setLoading(true);
-    setError(null);
     setVerificationResult(null);
+    
     try {
-      const res = await axios({
-        method: endpoint === 'hash' ? 'get' : 'post',
-        url: `http://localhost:8002/verify/${endpoint}`,
-        data: endpoint === 'file' ? data : null,
-        params: endpoint === 'hash' ? { document_hash: data } : null,
-      });
-
-      if (res.data) {
-        const document = res.data.document || {};
-        setVerificationResult({
-          valid: res.data.verified,
-          hash: res.data.hash,
-          details: {
-            filename: document.filename || 'Unknown',
-            timestamp: document.timestamp || new Date().toISOString(),
-            qr_code_url: document.qr_code_url || null,
-          }
-        });
+      let endpoint = method === 'file' ? '/verify/file' : '/verify/hash';
+      let res;
+      
+      if (method === 'file') {
+        const formData = new FormData();
+        formData.append('file', data);
+        res = await axios.post(`http://localhost:8000${endpoint}`, formData);
       } else {
-        throw new Error('Invalid response from server');
+        res = await axios.get(`http://localhost:8000${endpoint}`, {
+          params: { document_hash: data }
+        });
       }
+
+      setVerificationResult({
+        valid: res.data.verified,
+        hash: res.data.document_hash,
+        details: {
+          filename: res.data.filename,
+          timestamp: res.data.timestamp,
+          qr_code_url: res.data.qr_code_url
+        }
+      });
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Verification failed.');
+      setVerificationResult({
+        valid: false,
+        hash: method === 'hash' ? hashInput : '',
+        details: {
+          filename: method === 'file' ? data?.name : 'Unknown',
+          timestamp: new Date().toISOString(),
+          qr_code_url: null
+        }
+      });
     } finally {
       setLoading(false);
     }
@@ -46,12 +54,11 @@ export default function Verify() {
 
   const handleFileUpload = (file) => {
     if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    verifyDocument('file', formData);
+    verifyDocument('file', file);
   };
 
   const handleQRScan = (data) => {
+    if (!data) return;
     verifyDocument('hash', data);
   };
 
@@ -88,7 +95,7 @@ export default function Verify() {
               <h2 className="text-xl font-semibold mb-4 flex items-center">
                 <FiCheckCircle className="mr-2 text-blue-400" /> Scan QR Code
               </h2>
-              <QRScanner onScan={handleQRScan} loading={loading} />
+              <QRScannerCard onScan={handleQRScan} loading={loading} />
             </motion.div>
           )}
 
@@ -153,16 +160,6 @@ export default function Verify() {
             </motion.div>
           )}
         </div>
-
-        {/* Error */}
-        {error && (
-          <motion.div className="bg-red-900/20 border-l-4 border-red-500 p-4 mb-6 rounded-r-lg">
-            <div className="flex items-center">
-              <FiXCircle className="h-5 w-5 text-red-400 mr-2" />
-              <p className="text-red-300">{error}</p>
-            </div>
-          </motion.div>
-        )}
 
         {/* Result */}
         {verificationResult && (
