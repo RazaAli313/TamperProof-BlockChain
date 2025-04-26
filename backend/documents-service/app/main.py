@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,24 +6,26 @@ from hashlib import sha256
 import os
 from datetime import datetime
 import uuid
-import httpx  # For making HTTP requests to other services
+from motor.motor_asyncio import AsyncIOMotorClient
+from bson import ObjectId
+from typing import List
 
-# Initialize FastAPI app
 app = FastAPI()
 
-# Add CORS middleware to allow requests from your frontend (React)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # You can replace "*" with specific frontend URL (e.g., ["http://localhost:3000"])
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
-)
+# MongoDB setup
+MONGODB_URL = "mongodb://localhost:27017"
+client = AsyncIOMotorClient(MONGODB_URL)
+db = client["document_verification"]
+documents_collection = db["documents"]
 
-# Simulate a database for documents (use a real database in production)
-documents_db = {}
+# Models
+class Document(BaseModel):
+    document_id: str
+    filename: str
+    hash: str
+    upload_date: str
+    verified: bool
 
-# Pydantic model for document verification response
 class DocumentVerificationResponse(BaseModel):
     verified: bool
     document_hash: str
@@ -31,119 +33,166 @@ class DocumentVerificationResponse(BaseModel):
     timestamp: str
     qr_code_url: str = None
 
+class StatsResponse(BaseModel):
+    totalDocuments: int
+    verifiedDocuments: int
+    pendingVerifications: int
+    totalUsers: int = 0  # Not used but kept for compatibility
 
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Verify endpoints (for Verify.jsx)
 @app.post("/documents/upload")
 async def upload_document(file: UploadFile = File(...)):
-    # Generate a unique document ID
-    document_id = str(uuid.uuid4())
     file_contents = await file.read()
     document_hash = sha256(file_contents).hexdigest()
+    document_id = str(uuid.uuid4())
     
-    # Save the file to disk or database (In this case, save to a local directory)
+    # Save file to uploads directory
     file_location = f"uploads/{document_id}_{file.filename}"
     os.makedirs(os.path.dirname(file_location), exist_ok=True)
-    
     with open(file_location, "wb") as f:
         f.write(file_contents)
 
-    # Simulate saving the document in the "database"
+    # Store in MongoDB
     document_data = {
-        "id": document_id,
+        "document_id": document_id,
         "filename": file.filename,
         "hash": document_hash,
         "upload_date": datetime.now().isoformat(),
-        "qr_code_url": f"/qr/{document_id}",  # Example of QR URL (you'd generate an actual QR code in a real system)
-        "verified": False  # Initially, the document is not verified
+        "file_path": file_location,
+        "verified": False
     }
     
-    documents_db[document_id] = document_data
-    return JSONResponse(content={"message": "Document uploaded successfully", "document_id": document_id}, status_code=201)
-
-
-@app.get("/verify/hash")
-async def verify_document_by_hash(document_hash: str):
-    # Check if the document exists in the "database" by hash
-    document = next((doc for doc in documents_db.values() if doc["hash"] == document_hash), None)
-
-    if document:
-        return DocumentVerificationResponse(
-            verified=True,
-            document_hash=document["hash"],
-            filename=document["filename"],
-            timestamp=document["upload_date"],
-            qr_code_url=document["qr_code_url"]
-        )
-    else:
-        raise HTTPException(status_code=404, detail="Document not found")
-
+    result = await documents_collection.insert_one(document_data)
+    return JSONResponse(
+        content={
+            "message": "Document uploaded successfully",
+            "document_id": document_id,
+            "_id": str(result.inserted_id),
+            "filename": file.filename,
+            "verified": False,
+            "upload_date": document_data["upload_date"],
+            "qrUrl": f"/qr/{document_id}"
+        },
+        status_code=201
+    )
 
 @app.post("/verify/file")
 async def verify_document_by_file(file: UploadFile = File(...)):
     file_contents = await file.read()
     document_hash = sha256(file_contents).hexdigest()
-
-    # Check if the document exists in the "database" by hash
-    document = next((doc for doc in documents_db.values() if doc["hash"] == document_hash), None)
-
-    if document:
+    
+    existing_doc = await documents_collection.find_one({"hash": document_hash})
+    
+    if existing_doc:
         return DocumentVerificationResponse(
-            verified=True,
-            document_hash=document["hash"],
-            filename=document["filename"],
-            timestamp=document["upload_date"],
-            qr_code_url=document["qr_code_url"]
+            verified=existing_doc["verified"],
+            document_hash=existing_doc["hash"],
+            filename=existing_doc["filename"],
+            timestamp=existing_doc["upload_date"],
+            qr_code_url=f"/qr/{existing_doc['document_id']}"
         )
-    else:
-        raise HTTPException(status_code=404, detail="Document not found")
+    raise HTTPException(status_code=404, detail="Document not found")
 
+@app.get("/verify/hash")
+async def verify_document_by_hash(document_hash: str):
+    existing_doc = await documents_collection.find_one({"hash": document_hash})
+    
+    if existing_doc:
+        return DocumentVerificationResponse(
+            verified=existing_doc["verified"],
+            document_hash=existing_doc["hash"],
+            filename=existing_doc["filename"],
+            timestamp=existing_doc["upload_date"],
+            qr_code_url=f"/qr/{existing_doc['document_id']}"
+        )
+    raise HTTPException(status_code=404, detail="Document not found")
 
-@app.get("/documents/stats")
+# Admin Dashboard endpoints
+@app.get("/documents", response_model=List[Document])
+async def get_all_documents():
+    documents = []
+    async for doc in documents_collection.find():
+        documents.append({
+            "_id": str(doc["_id"]),
+            "document_id": doc["document_id"],
+            "filename": doc["filename"],
+            "hash": doc["hash"],
+            "upload_date": doc["upload_date"],
+            "verified": doc["verified"],
+            "qrUrl": f"/qr/{doc['document_id']}"
+        })
+    return documents
+
+@app.get("/documents/stats", response_model=StatsResponse)
 async def get_document_stats():
-    total_documents = len(documents_db)
-    verified_documents = sum(1 for doc in documents_db.values() if doc["verified"])
+    total_documents = await documents_collection.count_documents({})
+    verified_documents = await documents_collection.count_documents({"verified": True})
+    pending_verifications = await documents_collection.count_documents({"verified": False})
+    
+    return {
+        "totalDocuments": total_documents,
+        "verifiedDocuments": verified_documents,
+        "pendingVerifications": pending_verifications
+    }
 
-    return {"totalDocuments": total_documents, "verifiedDocuments": verified_documents}
+@app.patch("/documents/{document_id}/verify")
+async def verify_document(document_id: str):
+    result = await documents_collection.update_one(
+        {"document_id": document_id},
+        {"$set": {"verified": True}}
+    )
+    if result.modified_count == 1:
+        return {"message": "Document verified successfully"}
+    raise HTTPException(status_code=404, detail="Document not found")
 
+@app.delete("/documents/{document_id}")
+async def delete_document(document_id: str):
+    result = await documents_collection.delete_one({"document_id": document_id})
+    if result.deleted_count == 1:
+        return {"message": "Document deleted successfully"}
+    raise HTTPException(status_code=404, detail="Document not found")
 
-@app.get("/documents")
-async def get_documents():
-    # Return a list of documents with their details
-    return [{"filename": doc["filename"], "hash": doc["hash"], "upload_date": doc["upload_date"], "verified": doc["verified"], "qr_url": doc["qr_code_url"]} for doc in documents_db.values()]
+# User Dashboard endpoints
+@app.get("/user/documents", response_model=List[Document])
+async def get_user_documents():
+    """For simplicity, returns all documents since we're not implementing user auth"""
+    return await get_all_documents()
 
+@app.get("/user/stats", response_model=StatsResponse)
+async def get_user_stats():
+    """For simplicity, returns the same stats as admin"""
+    return await get_document_stats()
+
+# QR Code and Download endpoints
+@app.get("/qr/{document_id}")
+async def get_qr_code(document_id: str):
+    document = await documents_collection.find_one({"document_id": document_id})
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {
+        "qr_code_url": f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={document['hash']}"
+    }
 
 @app.get("/documents/download/{document_id}")
 async def download_document(document_id: str):
-    document = documents_db.get(document_id)
-    if document:
-        return FileResponse(path=f"uploads/{document_id}_{document['filename']}", media_type="application/octet-stream", filename=document['filename'])
-    else:
+    document = await documents_collection.find_one({"document_id": document_id})
+    if not document:
         raise HTTPException(status_code=404, detail="Document not found")
-
-
-# Example QR code generation (not implemented here, you'd use a library like qrcode for generating actual QR codes)
-@app.get("/qr/{document_id}")
-async def get_qr_code(document_id: str):
-    # In a real application, generate and return a QR code as an image
-    return {"message": f"QR code for document {document_id}"}
-
-# Communication with blockchain service
-@app.post("/blockchain/verify")
-async def verify_document_with_blockchain(document_hash: str):
-    async with httpx.AsyncClient() as client:
-        response = await client.post("http://localhost:8003/blockchain/verify", json={"document_hash": document_hash})
-        if response.status_code == 200:
-            blockchain_response = response.json()
-            return {"blockchain_verified": blockchain_response.get("verified"), "blockchain_details": blockchain_response}
-        else:
-            raise HTTPException(status_code=500, detail="Error communicating with blockchain service")
-
-# Communicate with QR code service to generate a QR code for the document
-@app.post("/qrcode/generate")
-async def generate_qr_code_for_document(document_id: str):
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"http://localhost:8004/qrcode/generate", json={"document_id": document_id})
-        if response.status_code == 200:
-            qr_code_data = response.json()
-            return {"qr_code_url": qr_code_data["qr_code_url"]}
-        else:
-            raise HTTPException(status_code=500, detail="Error generating QR code")
+    
+    if not os.path.exists(document["file_path"]):
+        raise HTTPException(status_code=404, detail="File not found on server")
+    
+    return FileResponse(
+        path=document["file_path"],
+        filename=document["filename"],
+        media_type="application/octet-stream"
+    )
