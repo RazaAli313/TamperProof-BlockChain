@@ -1,25 +1,19 @@
-export default function DocumentCard({ title, hash, date, qrUrl, showShareButton = false }) {
-    return (
-      <div className="bg-white p-4 rounded-lg shadow">
-        <div className="flex justify-between items-start">
-          <div>
-            <h3 className="font-semibold">{title}</h3>
-            <p className="text-sm text-gray-500 mt-1">Issued: {date}</p>
-            <p className="text-xs font-mono text-gray-400 truncate mt-1" title={hash}>
-              Hash: {hash}
-            </p>
-          </div>
-          {qrUrl && (
-            <div className="flex flex-col items-center">
-              <img src={qrUrl} alt="QR Code" className="w-16 h-16" />
-              {showShareButton && (
-                <button className="mt-1 text-xs text-blue-600 hover:underline">
-                  Share
-                </button>
-              )}
-            </div>
-          )}
+import { FiFileText } from "react-icons/fi";
+
+export default function DocumentCard({ document, onClick }) {
+  return (
+    <div
+      className="bg-gray-700 hover:bg-gray-600 cursor-pointer p-4 rounded-lg shadow transition"
+      onClick={() => onClick(document)}
+    >
+      <div className="flex items-center space-x-3">
+        <FiFileText className="text-blue-400 flex-shrink-0" size={24} />
+        <div className="flex-1 min-w-0">
+          <p className="text-white font-semibold truncate">
+            {document.filename}
+          </p>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
