@@ -123,11 +123,11 @@ export default function UserDashboard({ clearAuth }) {
                     title={doc.filename}
                     hash={doc.hash}
                    
-                    qrUrl={doc.qrUrl}
+                  
                     verified={doc.verified}
-                    downloadUrl={`http://localhost:8002/documents/download/${doc._id}`}
+                   
                     openModal={openModal}
-                    document={doc}
+                   
                   />
                 ))}
               </div>
