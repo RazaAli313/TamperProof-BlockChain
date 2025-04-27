@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
-import { FiFileText, FiLogOut, FiDownload, FiShare2 } from 'react-icons/fi';
-import DocumentCard from '../components/DocumentCard';
-import StatsCard from '../components/StatsCard';
+import { FiFileText, FiLogOut} from 'react-icons/fi';
+import UserDocumentCard from '../components/UserDocumentCard';
+import UserStatsCard from '../components/UserStatsCard';
+import DocumentModal from '../components/DocumentModal';
 
 export default function UserDashboard({ clearAuth }) {
   const [documents, setDocuments] = useState([]);
@@ -12,9 +13,21 @@ export default function UserDashboard({ clearAuth }) {
     totalDocuments: 0,
     verifiedDocuments: 0
   });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState(null);
 
   const handleLogout = () => {
     clearAuth();
+  };
+
+  const openModal = (document) => {
+    setSelectedDocument(document);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedDocument(null);
   };
 
   useEffect(() => {
@@ -32,7 +45,7 @@ export default function UserDashboard({ clearAuth }) {
             }
           })
         ]);
-        
+
         setDocuments(docsRes.data);
         setStats({
           totalDocuments: statsRes.data.totalDocuments,
@@ -62,14 +75,7 @@ export default function UserDashboard({ clearAuth }) {
             <FiFileText className="mr-3" />
             My Documents
           </a>
-          <a className="flex items-center px-4 py-3 text-gray-400 hover:bg-gray-700/50 hover:text-gray-200 rounded-lg transition-colors">
-            <FiDownload className="mr-3" />
-            Downloads
-          </a>
-          <a className="flex items-center px-4 py-3 text-gray-400 hover:bg-gray-700/50 hover:text-gray-200 rounded-lg transition-colors">
-            <FiShare2 className="mr-3" />
-            Shared
-          </a>
+       
         </nav>
         
         <button 
@@ -91,16 +97,12 @@ export default function UserDashboard({ clearAuth }) {
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <StatsCard 
+            <UserStatsCard 
               icon={<FiFileText className="h-6 w-6 text-blue-400" />} 
               title="Total Documents" 
               value={stats.totalDocuments} 
             />
-            <StatsCard 
-              icon={<FiFileText className="h-6 w-6 text-green-400" />} 
-              title="Verified" 
-              value={stats.verifiedDocuments} 
-            />
+           
           </div>
 
           {/* Documents List */}
@@ -116,36 +118,32 @@ export default function UserDashboard({ clearAuth }) {
             ) : documents.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {documents.map((doc) => (
-                  <DocumentCard 
+                  <UserDocumentCard 
                     key={doc._id}
                     title={doc.filename}
                     hash={doc.hash}
-                    date={new Date(doc.uploadDate).toLocaleString()}
+                   
                     qrUrl={doc.qrUrl}
                     verified={doc.verified}
-                    showShareButton
                     downloadUrl={`http://localhost:8002/documents/download/${doc._id}`}
+                    openModal={openModal}
+                    document={doc}
                   />
                 ))}
               </div>
             ) : (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-center py-12"
-              >
-                <div className="mx-auto w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                  <FiFileText className="h-12 w-12 text-gray-500" />
-                </div>
-                <h3 className="text-lg font-medium text-white mb-1">No documents found</h3>
-                <p className="text-gray-400 max-w-md mx-auto">
-                  You haven't uploaded any documents yet. Documents shared with you will appear here.
-                </p>
-              </motion.div>
+              <p className="text-center text-gray-500">No documents uploaded.</p>
             )}
           </motion.div>
         </main>
       </div>
+
+      {/* Modal */}
+      <DocumentModal 
+        isOpen={isModalOpen} 
+        closeModal={closeModal} 
+        document={selectedDocument} 
+      />
     </div>
   );
 }
