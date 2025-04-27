@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
-import { FiUpload, FiFileText, FiLogOut, FiShield, FiUsers } from 'react-icons/fi';
+import { FiUpload, FiFileText, FiLogOut, FiShield } from 'react-icons/fi';
 import DocumentCard from '../components/DocumentCard';
 import SideBar from '../components/SideBar';
 import StatsCard from '../components/StatsCard';
@@ -16,6 +16,7 @@ export default function AdminDashboard({ clearAuth }) {
     pendingVerifications: 0,
     totalUsers: 0
   });
+  const [selectedDocument, setSelectedDocument] = useState(null);
 
   useEffect(() => {
     fetchDocuments();
@@ -80,9 +81,6 @@ export default function AdminDashboard({ clearAuth }) {
     <div className="flex h-screen bg-gray-900 text-gray-100">
       {/* Sidebar */}
       <SideBar>
-        <SideBar.Item icon={<FiFileText />} text="Documents" active />
-        <SideBar.Item icon={<FiUsers />} text="User Management" />
-        <SideBar.Item icon={<FiShield />} text="Verifications" />
         <SideBar.Item 
           icon={<FiLogOut />} 
           text="Logout" 
@@ -102,24 +100,9 @@ export default function AdminDashboard({ clearAuth }) {
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatsCard 
-              icon={<FiFileText className="h-6 w-6 text-blue-400" />} 
-              title="Total Documents" 
-              value={stats.totalDocuments} 
-            />
-            <StatsCard 
               icon={<FiShield className="h-6 w-6 text-green-400" />} 
-              title="Verified" 
+              title="Total Verified Documents" 
               value={stats.verifiedDocuments} 
-            />
-            <StatsCard 
-              icon={<FiShield className="h-6 w-6 text-yellow-400" />} 
-              title="Pending" 
-              value={stats.pendingVerifications} 
-            />
-            <StatsCard 
-              icon={<FiUsers className="h-6 w-6 text-purple-400" />} 
-              title="Users" 
-              value={stats.totalUsers} 
             />
           </div>
 
@@ -145,9 +128,7 @@ export default function AdminDashboard({ clearAuth }) {
                 />
                 <label
                   htmlFor="document-upload"
-                  className={`block w-full p-4 rounded-lg border-2 border-dashed ${
-                    file ? 'border-blue-500 bg-blue-500/10' : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'
-                  } cursor-pointer transition-all`}
+                  className={`block w-full p-4 rounded-lg border-2 border-dashed ${file ? 'border-blue-500 bg-blue-500/10' : 'border-gray-600 bg-gray-700/30 hover:border-gray-500'} cursor-pointer transition-all`}
                 >
                   {file ? (
                     <div className="text-center">
@@ -168,9 +149,7 @@ export default function AdminDashboard({ clearAuth }) {
                 disabled={loading || !file}
                 whileHover={!loading && file ? { scale: 1.02 } : {}}
                 whileTap={!loading && file ? { scale: 0.98 } : {}}
-                className={`px-6 py-3 rounded-lg font-medium text-white transition-all ${
-                  loading ? 'bg-blue-700' : !file ? 'bg-gray-700' : 'bg-blue-600 hover:bg-blue-500'
-                }`}
+                className={`px-6 py-3 rounded-lg font-medium text-white transition-all ${loading ? 'bg-blue-700' : !file ? 'bg-gray-700' : 'bg-blue-600 hover:bg-blue-500'}`}
               >
                 {loading ? (
                   <div className="flex items-center justify-center">
@@ -196,12 +175,41 @@ export default function AdminDashboard({ clearAuth }) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
               {documents.map((document) => (
-                <DocumentCard key={document._id} document={document} />
+                <DocumentCard key={document._id} document={document} onClick={setSelectedDocument} />
               ))}
             </div>
           </div>
         </main>
       </div>
+
+      {/* Modal for Document Details */}
+      {selectedDocument && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="bg-gray-900 rounded-lg p-6 max-w-md w-full relative"
+          >
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-white"
+              onClick={() => setSelectedDocument(null)}
+            >
+              ✖
+            </button>
+
+            <h2 className="text-2xl font-bold text-white mb-4">Document Info</h2>
+
+            <div className="space-y-2 text-gray-300 text-sm">
+              <div><strong>Document ID:</strong> {selectedDocument.document_id}</div>
+              <div><strong>Filename:</strong> {selectedDocument.filename}</div>
+              <div><strong>Hash:</strong> {selectedDocument.hash}</div>
+              <div><strong>Upload Date:</strong> {new Date(selectedDocument.upload_date).toLocaleString()}</div>
+              <div><strong>Verified:</strong> {selectedDocument.verified ? "Yes" : "No"}</div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
