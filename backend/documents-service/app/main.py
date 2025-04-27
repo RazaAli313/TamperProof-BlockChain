@@ -68,7 +68,7 @@ async def upload_document(file: UploadFile = File(...)):
         "hash": document_hash,
         "upload_date": datetime.now().isoformat(),
         "file_path": file_location,
-        "verified": False
+        "verified": True
     }
     
     result = await documents_collection.insert_one(document_data)
@@ -89,10 +89,11 @@ async def upload_document(file: UploadFile = File(...)):
 async def verify_document_by_file(file: UploadFile = File(...)):
     file_contents = await file.read()
     document_hash = sha256(file_contents).hexdigest()
-    
+ 
     existing_doc = await documents_collection.find_one({"hash": document_hash})
     
     if existing_doc:
+        print("j00")
         return DocumentVerificationResponse(
             verified=existing_doc["verified"],
             document_hash=existing_doc["hash"],
@@ -100,6 +101,7 @@ async def verify_document_by_file(file: UploadFile = File(...)):
             timestamp=existing_doc["upload_date"],
             qr_code_url=f"/qr/{existing_doc['document_id']}"
         )
+    print("hooo")
     raise HTTPException(status_code=404, detail="Document not found")
 
 @app.get("/verify/hash")
